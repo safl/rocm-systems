@@ -1,0 +1,15 @@
+# Where the work runs: here, as root on the release the hosts run, Ubuntu
+# 26.04, unless a [cijoe.transport.<name>] section names a host to run it on.
+#
+# The environment says what to build: XNVME_CI_SRC is the rocm-systems tree on
+# that host, XNVME_CI_OUT where the debs go, and XNVME_CI_N the release
+# number, the <n> of a tag xnvme-ci/v<version>-<n>, or 0 for a build of the
+# branch.
+[xnvme_ci]
+src = "{{ local.env.XNVME_CI_SRC }}"
+out = "{{ local.env.XNVME_CI_OUT }}"
+n = "{{ local.env.XNVME_CI_N }}"
+
+# The GPU the guest firmware describes, and the server config that sets its BAR
+gpu = "gfx1250"
+gpu_config = "gfx1250_mi455x.json"

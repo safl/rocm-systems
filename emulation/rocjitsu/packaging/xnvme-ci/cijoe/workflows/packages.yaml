@@ -1,0 +1,30 @@
+---
+doc: |
+  Build and check rocjitsu-host and rocjitsu-guest-firmware
+
+  Runs on the release the hosts run, Ubuntu 26.04. Builds the vfio-user server
+  and packages it as rocjitsu-host, builds the guest's firmware and amdgpu
+  options from that package as rocjitsu-guest-firmware, runs the firmware
+  builder's tests, then installs both and checks what the host and the guest
+  rely on.
+
+steps:
+- name: deps
+  run: |
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get -qy update
+    apt-get -qy install --no-install-recommends build-essential clang cmake ninja-build git ca-certificates python3 file
+    git config --global --add safe.directory '*'
+
+- name: rj_host_package
+  uses: rj_host_package
+
+- name: rj_firmware_package
+  uses: rj_firmware_package
+
+- name: firmware_builder_tests
+  run: |
+    cd {{ config.xnvme_ci.src }} && python3 -m unittest emulation/rocjitsu/tests/tools/test_vfio_guest_firmware.py
+
+- name: rj_packages_check
+  uses: rj_packages_check
