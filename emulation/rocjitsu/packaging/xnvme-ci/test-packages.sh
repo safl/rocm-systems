@@ -27,4 +27,11 @@ tmp=$(mktemp)
 /opt/rocjitsu/bin/rj-ip-discovery gfx1250 "$tmp"
 cmp "$tmp" "$fw/ip_discovery.bin"
 grep -q '^options amdgpu .*discovery=2' /etc/modprobe.d/amdgpu-rocjitsu.conf
+# vramlimit (MiB) must equal the BAR the server presents, or pins move buffers
+aperture=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["vm"]["gpu"]["pci"]["vram_aperture_bytes"] >> 20)' \
+	/opt/rocjitsu/share/configs/gfx1250_mi455x.json)
+grep -q "^options amdgpu .*vramlimit=$aperture\b" /etc/modprobe.d/amdgpu-rocjitsu.conf || {
+	echo "test-packages.sh: amdgpu vramlimit is not the ${aperture} MiB BAR" >&2
+	exit 1
+}
 echo "test-packages.sh: ok"
