@@ -434,6 +434,31 @@ TEST_F(MesEngineStateTest, ComputeQueuesUseFrontendPlacementDoorbellsAndLifecycl
   EXPECT_EQ(bindings_.pm4->destructions, 1u);
 }
 
+// KFD evicts a process by removing its queues and restores it by adding them
+// again. A producer that rings a doorbell in between writes a register no queue
+// is mapped behind; a doorbell register keeps its value regardless, so the
+// queue must see it when it is added again, or its pending work never runs.
+TEST_F(MesEngineStateTest, DoorbellRungWhileTheQueueIsRemovedReachesItOnReadd) {
+  write_compute_add_frame(kRing, true, 1);
+  ASSERT_EQ(notify(kFrameDwords), rocjitsu::amdgpu::MesDoorbellDisposition::Complete);
+  EXPECT_TRUE(bindings_.aql->submissions.empty()) << "a queue never rung has nothing to resume";
+
+  write_remove_frame(kRing + kFrameDwords * sizeof(uint32_t), 2);
+  store<uint32_t>(kRing + kFrameDwords * sizeof(uint32_t) + sizeof(uint32_t),
+                  kComputeDoorbell / sizeof(uint32_t));
+  ASSERT_EQ(notify(2 * kFrameDwords), rocjitsu::amdgpu::MesDoorbellDisposition::Complete);
+  ASSERT_EQ(engine_.active_queues(), 0u);
+
+  EXPECT_EQ(engine_.notify_doorbell(kComputeDoorbell, 4, std::nullopt,
+                                    rocjitsu::amdgpu::MesDoorbellContext({}, 0x1234, 7)),
+            rocjitsu::amdgpu::MesDoorbellDisposition::Ignored);
+
+  write_compute_add_frame(kRing + 2 * kFrameDwords * sizeof(uint32_t), true, 3);
+  ASSERT_EQ(notify(3 * kFrameDwords), rocjitsu::amdgpu::MesDoorbellDisposition::Complete);
+  ASSERT_EQ(bindings_.aql->requests.size(), 2u);
+  EXPECT_EQ(bindings_.aql->submissions, (std::vector<uint64_t>{4}));
+}
+
 TEST_F(MesEngineStateTest, PasidDoesNotClaimTheSameNumericVmidRoute) {
   const auto routed = gpu_vm_.register_address_space(
       7, std::make_shared<rocjitsu::amdgpu::IdentityAddressSpaceTranslator>(), memory_);

@@ -206,6 +206,7 @@ bool MesEngine::teardown_queues() {
   // no pre-reset semantic may later publish success through a retained snapshot,
   // even if destruction makes partial progress and the caller reports failure.
   pending_mes_frames_.clear();
+  unmapped_doorbells_.clear();
 
   bool complete = true;
   for (std::vector<Queue>::iterator queue = mapped_queues_.begin();
@@ -728,6 +729,15 @@ amdgpu::VmAccessOutcome MesEngine::execute_mes_semantic(std::span<const std::byt
                                      mapped.doorbell_offset));
       return committed;
     }
+    // KFD restores an evicted process by adding its queues again; work its
+    // producer published meanwhile is announced only by that doorbell value.
+    if (const auto rung = unmapped_doorbells_.find(mapped.doorbell_offset);
+        rung != unmapped_doorbells_.end()) {
+      const uint64_t value = rung->second;
+      unmapped_doorbells_.erase(rung);
+      if (mapped.queue_handle)
+        (void)queue_registry_.submit_producer(mapped.queue_handle, value);
+    }
   } else if (opcode == kMesApiRemoveQueue) {
     const uint64_t doorbell_offset =
         static_cast<uint64_t>(dword(frame, kRemoveQueueDoorbellDword)) * sizeof(uint32_t);
@@ -978,6 +988,7 @@ MesDoorbellDisposition MesEngine::notify_doorbell(uint64_t byte_offset, uint64_t
   }
   if (direct_queue && direct_queue->doorbell_offset == byte_offset)
     return process_queue(kernel_queue(*direct_queue), write_pointer, context);
+  unmapped_doorbells_[byte_offset] = write_pointer;
   return MesDoorbellDisposition::Ignored;
 }
 

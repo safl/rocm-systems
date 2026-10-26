@@ -278,6 +278,9 @@ private:
   std::unordered_map<uint32_t, AddressSpace> address_spaces_;
   std::vector<AddressSpaceHandle> orphaned_address_spaces_;
   std::unordered_map<uint64_t, PendingMesFrame> pending_mes_frames_;
+  /// The last value written to each doorbell with no queue mapped behind it,
+  /// which a doorbell register keeps, delivered to the queue next mapped there.
+  std::unordered_map<uint64_t, uint64_t> unmapped_doorbells_;
   std::shared_ptr<SdmaQueueBindingFactory> sdma_queue_binding_factory_;
   InterruptSink interrupt_sink_;
   MesFrontendCallbacks callbacks_;
