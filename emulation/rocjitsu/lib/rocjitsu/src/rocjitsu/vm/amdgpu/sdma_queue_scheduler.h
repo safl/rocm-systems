@@ -138,6 +138,8 @@ public:
 
   /// @brief Return the number of queues currently owned by this scheduler.
   [[nodiscard]] std::size_t active_queues() const;
+  /// @brief The consumer cursor of each live queue, in slot order.
+  [[nodiscard]] std::vector<uint64_t> queue_cursors_for_test() const;
   /// @brief Return whether @p handle still names an attached queue.
   [[nodiscard]] bool contains(Handle handle) const;
   /// @brief Return the packet dialect used for newly attached queues.

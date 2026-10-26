@@ -265,6 +265,8 @@ private:
   [[nodiscard]] bool update_process_address_space(uint64_t process_context_address,
                                                   uint64_t page_table_base,
                                                   std::shared_ptr<PhysicalMemoryAccess> memory);
+  /// The read pointer a queue last published, 0 when it cannot be read.
+  [[nodiscard]] uint64_t published_read_pointer(const Queue &queue) const;
   [[nodiscard]] bool register_aql_queue(Queue &queue);
   [[nodiscard]] bool register_pm4_queue(Queue &queue);
   [[nodiscard]] bool register_sdma_queue(Queue &queue);

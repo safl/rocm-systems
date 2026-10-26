@@ -153,7 +153,7 @@ private:
     return address <= bytes_.size() && size <= bytes_.size() - address;
   }
 
-  std::vector<std::byte> bytes_ = std::vector<std::byte>(0x4000);
+  std::vector<std::byte> bytes_ = std::vector<std::byte>(0x10000);
   std::optional<uint64_t> unavailable_write_;
 };
 
@@ -519,6 +519,43 @@ TEST_F(MesEngineStateTest, SdmaAddDoorbellAndRemoveUseTheSharedQueueRegistry) {
   EXPECT_EQ(notify(2 * kFrameDwords), rocjitsu::amdgpu::MesDoorbellDisposition::Complete);
   EXPECT_EQ(sdma_scheduler_.active_queues(), 0u);
   EXPECT_EQ(engine_.active_queues(), 0u);
+}
+
+// KFD restores an evicted process by adding its queues again with the MQDs
+// they were removed with, whose saved read pointer MES leaves at 0 here. A
+// re-added SDMA queue must resume where it last published: from 0 it would
+// replay packets it already ran, waits on signals that have moved on among
+// them, and stall.
+TEST_F(MesEngineStateTest, ReaddedSdmaQueueResumesAtItsPublishedReadPointer) {
+  constexpr uint64_t kSdmaReadPointer = 0x14000;
+  constexpr uint64_t kSdmaDoorbell = 0x180;
+  constexpr uint64_t kPdb2 = 0x4000;
+  constexpr uint64_t kPdb1 = 0x5000;
+  constexpr uint64_t kPdb0 = 0x6000;
+  constexpr uint64_t kPtb = 0x7000;
+  constexpr uint64_t kReadPointerPage = 0x8000;
+  constexpr uint64_t kSystemLeafPte = (uint64_t{1} << 63) | 0x63;
+  memory_->store<uint64_t>(kProcessPageTable, kPdb2 | 1);
+  memory_->store<uint64_t>(kPdb2, kPdb1 | 1);
+  memory_->store<uint64_t>(kPdb1, kPdb0 | 1);
+  memory_->store<uint64_t>(kPdb0, kPtb | 1);
+  memory_->store<uint64_t>(kPtb + (kSdmaReadPointer >> 12) * sizeof(uint64_t),
+                           kReadPointerPage | kSystemLeafPte);
+
+  write_sdma_add_frame(kRing, 1);
+  ASSERT_EQ(notify(kFrameDwords), rocjitsu::amdgpu::MesDoorbellDisposition::Complete);
+  EXPECT_EQ(sdma_scheduler_.queue_cursors_for_test(), (std::vector<uint64_t>{0}));
+
+  write_remove_frame(kRing + kFrameDwords * sizeof(uint32_t), 2);
+  store<uint32_t>(kRing + kFrameDwords * sizeof(uint32_t) + sizeof(uint32_t),
+                  kSdmaDoorbell / sizeof(uint32_t));
+  ASSERT_EQ(notify(2 * kFrameDwords), rocjitsu::amdgpu::MesDoorbellDisposition::Complete);
+  ASSERT_EQ(sdma_scheduler_.active_queues(), 0u);
+
+  memory_->store<uint64_t>(kReadPointerPage + (kSdmaReadPointer & 0xfff), 0x30);
+  write_sdma_add_frame(kRing + 2 * kFrameDwords * sizeof(uint32_t), 3);
+  ASSERT_EQ(notify(3 * kFrameDwords), rocjitsu::amdgpu::MesDoorbellDisposition::Complete);
+  EXPECT_EQ(sdma_scheduler_.queue_cursors_for_test(), (std::vector<uint64_t>{0x30}));
 }
 
 TEST_F(MesEngineStateTest, FailedComputeRegistrationAndGfxQueueDoNotCommit) {

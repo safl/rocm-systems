@@ -412,6 +412,16 @@ std::size_t SdmaQueueScheduler::active_queues() const {
       slots_, [](const Slot &slot) { return static_cast<bool>(slot.queue); }));
 }
 
+std::vector<uint64_t> SdmaQueueScheduler::queue_cursors_for_test() const {
+  std::lock_guard lock(mutex_);
+  std::vector<uint64_t> cursors;
+  for (const Slot &slot : slots_) {
+    if (slot.queue)
+      cursors.push_back(slot.queue->ring_consumer_.cursor());
+  }
+  return cursors;
+}
+
 bool SdmaQueueScheduler::contains(Handle handle) const {
   std::lock_guard lock(mutex_);
   return static_cast<bool>(find_locked(handle));

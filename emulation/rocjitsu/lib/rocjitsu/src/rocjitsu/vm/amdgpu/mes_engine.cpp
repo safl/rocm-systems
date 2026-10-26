@@ -416,6 +416,16 @@ bool MesEngine::update_process_address_space(uint64_t process_context_address,
   return true;
 }
 
+uint64_t MesEngine::published_read_pointer(const Queue &queue) const {
+  const std::optional<GpuVmAccess> access = gpu_vm_.snapshot(queue.address_space);
+  if (!access)
+    return 0;
+  std::array<std::byte, sizeof(uint64_t)> bytes{};
+  if (access->read(queue.read_pointer_address, bytes) != VmAccessOutcome::Complete)
+    return 0;
+  return std::bit_cast<uint64_t>(bytes);
+}
+
 bool MesEngine::register_aql_queue(Queue &queue) {
   if (queue.write_pointer_address < offsetof(amd_queue_t, write_dispatch_id) ||
       queue.ring_dwords > UINT32_MAX / sizeof(uint32_t)) {
@@ -705,8 +715,15 @@ amdgpu::VmAccessOutcome MesEngine::execute_mes_semantic(std::span<const std::byt
       mapped.write_pointer_address = qword(frame, kAddQueueWritePointerAddressDword);
       if (const uint32_t ring_dwords = dword(frame, kAddQueueSizeDword); ring_dwords != 0)
         mapped.ring_dwords = ring_dwords;
-      if (!bind_process_address_space(mapped, std::move(physical_memory), created_address_space) ||
-          !register_sdma_queue(mapped)) {
+      const bool bound =
+          bind_process_address_space(mapped, std::move(physical_memory), created_address_space);
+      // KFD restores an evicted process by adding its queues again with the
+      // MQDs they were removed with. MES would have saved a removed SDMA
+      // queue's read pointer there; this one did not, so an MQD that carries
+      // none resumes where the queue last published, which is 0 for a new one.
+      if (bound && mapped.initial_read_pointer == 0)
+        mapped.initial_read_pointer = published_read_pointer(mapped);
+      if (!bound || !register_sdma_queue(mapped)) {
         rollback_created_address_space(mapped, created_address_space);
         util::Logger::warn(std::format("{}: cannot attach SDMA queue at doorbell {:#x}",
                                        diagnostic_name_, mapped.doorbell_offset));
