@@ -10,6 +10,11 @@ src = "{{ local.env.XNVME_CI_SRC }}"
 out = "{{ local.env.XNVME_CI_OUT }}"
 n = "{{ local.env.XNVME_CI_N }}"
 
-# The GPU the guest firmware describes, and the server config that sets its BAR
+# The GPU the guest firmware describes; the server config rocjitsu-host
+# ships for it, derived from rocjitsu's own with a VRAM window (BAR) of
+# vram_aperture_mib; and the guest's amdgpu vramlimit, which is that BAR.
+# upcie-hip's default 1 GiB device heap needs more than 1 GiB of VRAM.
 gpu = "gfx1250"
-gpu_config = "gfx1250_mi455x.json"
+gpu_config_base = "gfx1250_mi455x.json"
+gpu_config = "gfx1250_mi455x_xnvme_ci.json"
+vram_aperture_mib = 2048

@@ -9,7 +9,9 @@ json-c statically, so everything else the binaries link must come from the
 archive, and becomes the package's Depends.
 
 The deb is <version>+xnvme<n> for a release, or <version>+xnvme0~g<commit>
-for a build of the branch, with 'xnvme_ci.n' as <n>.
+for a build of the branch, with 'xnvme_ci.n' as <n>. Next to rocjitsu's
+device configs it ships 'xnvme_ci.gpu_config', which is
+'xnvme_ci.gpu_config_base' with a VRAM window of 'xnvme_ci.vram_aperture_mib'.
 
 Retargetable: true
 ------------------
@@ -20,6 +22,11 @@ import shlex
 
 RJ = "emulation/rocjitsu"
 HERE = f"{RJ}/packaging/xnvme-ci"
+DERIVE_CONFIG = (
+    "python3 -I -c 'import json,sys; c=json.load(open(sys.argv[1])); "
+    "c[\"vm\"][\"gpu\"][\"pci\"][\"vram_aperture_bytes\"]=int(sys.argv[3]); "
+    "json.dump(c,open(sys.argv[2],\"w\"),indent=2)'"
+)
 
 
 def main(args, cijoe):
@@ -28,6 +35,9 @@ def main(args, cijoe):
     src = cijoe.getconf("xnvme_ci.src")
     out = cijoe.getconf("xnvme_ci.out")
     n = int(cijoe.getconf("xnvme_ci.n"))
+    config_base = cijoe.getconf("xnvme_ci.gpu_config_base")
+    config = cijoe.getconf("xnvme_ci.gpu_config")
+    aperture_mib = int(cijoe.getconf("xnvme_ci.vram_aperture_mib"))
 
     err, state = cijoe.run(
         f"sed -n 's/^project(rocm_jit_suite VERSION \\([0-9.]*\\)).*/\\1/p' {RJ}/CMakeLists.txt && "
@@ -58,6 +68,8 @@ def main(args, cijoe):
         f"{stage}/opt/rocjitsu/bin/rj-ip-discovery && "
         f"install -D -m 0755 {HERE}/rocjitsu-vram {stage}/opt/rocjitsu/bin/rocjitsu-vram && "
         f"mkdir -p {stage}/opt/rocjitsu/share && cp -r {RJ}/configs {stage}/opt/rocjitsu/share/configs && "
+        f"{DERIVE_CONFIG} {stage}/opt/rocjitsu/share/configs/{config_base} "
+        f"{stage}/opt/rocjitsu/share/configs/{config} {aperture_mib << 20} && "
         f"install -D -m 0644 {RJ}/LICENSE.md {stage}/usr/share/doc/rocjitsu-host/copyright",
         cwd=src,
     )

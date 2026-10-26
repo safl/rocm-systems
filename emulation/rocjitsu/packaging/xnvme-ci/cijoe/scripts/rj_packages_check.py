@@ -7,9 +7,9 @@ Installs both debs from 'xnvme_ci.out' and checks that the server runs; that
 the firmware is where amdgpu looks, with the MEC stamped 2090; that
 ip_discovery.bin is the one this rocjitsu-host's rj-ip-discovery writes; and
 that the amdgpu options are in place, with vramlimit equal to the BAR the
-server's 'xnvme_ci.gpu_config' presents. A larger vramlimit lets amdgpu place
-buffers outside the BAR, which a dma-buf pin then moves, evicting the
-process's queues, which rocjitsu does not restore.
+server's 'xnvme_ci.gpu_config' presents, which is 'xnvme_ci.vram_aperture_mib'.
+A larger vramlimit lets amdgpu place buffers outside the BAR, which a dma-buf
+pin then has to move.
 
 Retargetable: true
 ------------------
@@ -27,6 +27,7 @@ def main(args, cijoe):
     out = cijoe.getconf("xnvme_ci.out")
     gpu = cijoe.getconf("xnvme_ci.gpu")
     gpu_config = cijoe.getconf("xnvme_ci.gpu_config")
+    aperture_mib = int(cijoe.getconf("xnvme_ci.vram_aperture_mib"))
 
     err, _ = cijoe.run(
         "export DEBIAN_FRONTEND=noninteractive && apt-get -qy update && "
@@ -70,6 +71,9 @@ def main(args, cijoe):
     if err:
         return err
     aperture = state.output().strip().splitlines()[-1]
+    if aperture != str(aperture_mib):
+        log.error(f"{gpu_config} has a {aperture} MiB BAR, not {aperture_mib} MiB")
+        return errno.EINVAL
     err, _ = cijoe.run(f"grep '^options amdgpu .*vramlimit={aperture}\\b' {CONF}")
     if err:
         log.error(f"amdgpu vramlimit is not the {aperture} MiB BAR")

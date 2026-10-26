@@ -5,7 +5,8 @@ Package the guest's firmware fixtures and amdgpu options
 
 Builds rocjitsu-guest-firmware from the rocjitsu-host deb in 'xnvme_ci.out':
 its ip_discovery.bin comes from that deb's rj-ip-discovery, so it describes
-the GPU that server presents, and the package takes its version.
+the GPU that server presents, and the package takes its version; the
+amdgpu options' vramlimit is the VRAM window of that server's config.
 
 The fixture's MEC reports ucode_version 1. KFD then wants PCIe atomics from
 the root port, which QEMU never offers a vfio-user device; 2090 is the gfx12
@@ -20,6 +21,10 @@ import shlex
 
 RJ = "emulation/rocjitsu"
 HERE = f"{RJ}/packaging/xnvme-ci"
+APERTURE_MIB = (
+    "python3 -I -c 'import json,sys; "
+    "print(json.load(open(sys.argv[1]))[\"vm\"][\"gpu\"][\"pci\"][\"vram_aperture_bytes\"] >> 20)'"
+)
 MEC_STAMP = (
     "python3 -I -c 'import struct,sys; f=open(sys.argv[1],\"r+b\"); "
     "f.seek(16); f.write(struct.pack(\"<I\", 2090))'"
@@ -32,6 +37,7 @@ def main(args, cijoe):
     src = cijoe.getconf("xnvme_ci.src")
     out = cijoe.getconf("xnvme_ci.out")
     gpu = cijoe.getconf("xnvme_ci.gpu")
+    gpu_config = cijoe.getconf("xnvme_ci.gpu_config")
 
     err, state = cijoe.run(f"dpkg-deb -f $(ls {out}/rocjitsu-host_*.deb) Version")
     if err:
@@ -69,7 +75,10 @@ Description: firmware and amdgpu options for a guest with a rocjitsu GPU
     stage = "$work/stage"
     return cijoe.run(
         "work=$(cat /tmp/rj-fw-work) && "
-        f"install -D -m 0644 {HERE}/amdgpu-rocjitsu.conf {stage}/etc/modprobe.d/amdgpu-rocjitsu.conf && "
+        f"mib=$({APERTURE_MIB} $work/host/opt/rocjitsu/share/configs/{gpu_config}) && "
+        f"mkdir -p {stage}/etc/modprobe.d && sed \"s/VRAM_APERTURE_MIB/$mib/\" {HERE}/amdgpu-rocjitsu.conf "
+        f"> {stage}/etc/modprobe.d/amdgpu-rocjitsu.conf && "
+        f"chmod 0644 {stage}/etc/modprobe.d/amdgpu-rocjitsu.conf && "
         f"install -D -m 0644 {RJ}/LICENSE.md {stage}/usr/share/doc/rocjitsu-guest-firmware/copyright && "
         f"mkdir -p {stage}/DEBIAN && echo /etc/modprobe.d/amdgpu-rocjitsu.conf > {stage}/DEBIAN/conffiles && "
         f"printf '%s' {shlex.quote(control)} > {stage}/DEBIAN/control && "
